@@ -1,0 +1,5 @@
+aws_region          = "us-east-1"
+project_name        = "bunzina"
+cluster_version     = "1.32"
+node_instance_types = ["t3.medium"]
+node_desired_size   = 2
