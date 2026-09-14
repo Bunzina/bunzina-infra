@@ -80,7 +80,12 @@ jobs:
             -backend-config="use_lockfile=true"
 
       - name: Drop orphaned kubernetes_storage_class resource
-        run: terraform state rm kubernetes_storage_class.gp3 2>/dev/null || true
+        run: |
+          if terraform state list | grep -qx "kubernetes_storage_class.gp3"; then
+            terraform state rm kubernetes_storage_class.gp3
+          else
+            echo "kubernetes_storage_class.gp3 not in state, nothing to remove."
+          fi
 
       - name: Terraform validate
         run: terraform validate -no-color
@@ -168,7 +173,12 @@ jobs:
             -backend-config="use_lockfile=true"
 
       - name: Drop orphaned kubernetes_storage_class resource
-        run: terraform state rm kubernetes_storage_class.gp3 2>/dev/null || true
+        run: |
+          if terraform state list | grep -qx "kubernetes_storage_class.gp3"; then
+            terraform state rm kubernetes_storage_class.gp3
+          else
+            echo "kubernetes_storage_class.gp3 not in state, nothing to remove."
+          fi
 
       - name: Terraform apply
         run: terraform apply -auto-approve -input=false
