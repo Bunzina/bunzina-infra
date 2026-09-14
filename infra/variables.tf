@@ -45,3 +45,15 @@ variable "node_max_size" {
   type        = number
   default     = 4
 }
+
+variable "lb_controller_chart_version" {
+  description = "Chart version for the AWS Load Balancer Controller (aws.github.io/eks-charts)"
+  type        = string
+  default     = "3.5.0"
+}
+
+variable "metrics_server_chart_version" {
+  description = "Chart version for metrics-server (kubernetes-sigs.github.io/metrics-server)"
+  type        = string
+  default     = "3.14.0"
+}
