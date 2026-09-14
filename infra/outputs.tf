@@ -11,6 +11,16 @@ output "vpc_id" {
   value       = module.vpc.vpc_id
 }
 
+output "private_subnet_ids" {
+  description = "IDs das subnets privadas usadas pelo EKS e pelo PostgreSQL."
+  value       = module.vpc.private_subnets
+}
+
+output "eks_cluster_security_group_id" {
+  description = "Security group do cluster EKS autorizado a acessar recursos internos."
+  value       = aws_eks_cluster.this.vpc_config[0].cluster_security_group_id
+}
+
 output "ecr_repository_url" {
   description = "Repository URL for the application image in ECR"
   value       = aws_ecr_repository.bunzina.repository_url

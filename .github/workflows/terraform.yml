@@ -14,7 +14,7 @@ concurrency:
 env:
   AWS_REGION: us-east-1
   TF_WORKING_DIR: infra
-  STATE_KEY: infra/terraform.tfstate
+  STATE_KEY: bunzina/infra/dev/terraform.tfstate
 
 jobs:
   plan:
