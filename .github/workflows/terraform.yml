@@ -54,6 +54,20 @@ jobs:
             --versioning-configuration Status=Enabled || true
           echo "STATE_BUCKET=$STATE_BUCKET" >> "$GITHUB_ENV"
 
+      - name: Migrate state to new backend key (one-time)
+        working-directory: .
+        run: |
+          # STATE_KEY moved from infra/terraform.tfstate to bunzina/infra/dev/terraform.tfstate
+          # in commit 3e3225b without migrating the state object, orphaning already-applied
+          # resources (e.g. the app-chart ECR repo). Idempotent: no-op once migrated.
+          OLD_KEY="infra/terraform.tfstate"
+          if ! aws s3api head-object --bucket "$STATE_BUCKET" --key "${STATE_KEY}" >/dev/null 2>&1; then
+            if aws s3api head-object --bucket "$STATE_BUCKET" --key "$OLD_KEY" >/dev/null 2>&1; then
+              echo ">> Migrating state from ${OLD_KEY} to ${STATE_KEY}"
+              aws s3 cp "s3://${STATE_BUCKET}/${OLD_KEY}" "s3://${STATE_BUCKET}/${STATE_KEY}"
+            fi
+          fi
+
       - name: Terraform fmt
         run: terraform fmt -check -recursive
 
@@ -64,6 +78,9 @@ jobs:
             -backend-config="key=${STATE_KEY}" \
             -backend-config="region=${AWS_REGION}" \
             -backend-config="use_lockfile=true"
+
+      - name: Drop orphaned kubernetes_storage_class resource
+        run: terraform state rm kubernetes_storage_class.gp3 2>/dev/null || true
 
       - name: Terraform validate
         run: terraform validate -no-color
@@ -128,6 +145,20 @@ jobs:
             --versioning-configuration Status=Enabled || true
           echo "STATE_BUCKET=$STATE_BUCKET" >> "$GITHUB_ENV"
 
+      - name: Migrate state to new backend key (one-time)
+        working-directory: .
+        run: |
+          # STATE_KEY moved from infra/terraform.tfstate to bunzina/infra/dev/terraform.tfstate
+          # in commit 3e3225b without migrating the state object, orphaning already-applied
+          # resources (e.g. the app-chart ECR repo). Idempotent: no-op once migrated.
+          OLD_KEY="infra/terraform.tfstate"
+          if ! aws s3api head-object --bucket "$STATE_BUCKET" --key "${STATE_KEY}" >/dev/null 2>&1; then
+            if aws s3api head-object --bucket "$STATE_BUCKET" --key "$OLD_KEY" >/dev/null 2>&1; then
+              echo ">> Migrating state from ${OLD_KEY} to ${STATE_KEY}"
+              aws s3 cp "s3://${STATE_BUCKET}/${OLD_KEY}" "s3://${STATE_BUCKET}/${STATE_KEY}"
+            fi
+          fi
+
       - name: Terraform init
         run: |
           terraform init \
@@ -135,6 +166,9 @@ jobs:
             -backend-config="key=${STATE_KEY}" \
             -backend-config="region=${AWS_REGION}" \
             -backend-config="use_lockfile=true"
+
+      - name: Drop orphaned kubernetes_storage_class resource
+        run: terraform state rm kubernetes_storage_class.gp3 2>/dev/null || true
 
       - name: Terraform apply
         run: terraform apply -auto-approve -input=false
