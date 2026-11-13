@@ -1,0 +1,8 @@
+apiVersion: v2
+name: rabbitmq
+description: >-
+  Broker RabbitMQ de nó único do Bunzina (ADR 0015), com a topologia da saga
+  carregada como definitions no boot.
+type: application
+version: 0.1.0
+appVersion: "3.13"

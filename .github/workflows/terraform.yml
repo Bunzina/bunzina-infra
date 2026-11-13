@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - 'infra/**'
+      - 'charts/**'
       - '.github/workflows/terraform.yml'
   workflow_dispatch:
 
@@ -24,6 +25,8 @@ jobs:
     permissions:
       contents: read
       pull-requests: write
+    env:
+      TF_VAR_rabbitmq_password: ${{ secrets.RABBITMQ_PASSWORD }}
     defaults:
       run:
         working-directory: ${{ env.TF_WORKING_DIR }}
@@ -121,6 +124,8 @@ jobs:
     environment: production
     permissions:
       contents: read
+    env:
+      TF_VAR_rabbitmq_password: ${{ secrets.RABBITMQ_PASSWORD }}
     defaults:
       run:
         working-directory: ${{ env.TF_WORKING_DIR }}

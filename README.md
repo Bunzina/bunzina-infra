@@ -18,6 +18,7 @@ A ordem de implantação é **bunzina-infra → [bunzina-db](https://github.com/
 | Amazon ECR | Repositórios da imagem da aplicação e do chart Helm |
 | AWS CLI e kubectl | Autenticação e verificação do cluster |
 | GitHub Actions | Plano em pull requests e deploy manual |
+| Helm e RabbitMQ 3.13 | Broker da saga, instalado por `helm_release` a partir de `charts/rabbitmq` |
 
 ## Arquitetura
 
@@ -105,13 +106,15 @@ terraform init \
   -backend-config="encrypt=true" \
   -backend-config="use_lockfile=true"
 
+export TF_VAR_rabbitmq_password="<senha-do-rabbitmq>"   # mínimo de 8 caracteres
+
 terraform fmt -check -recursive
 terraform validate
 terraform plan
 terraform apply
 ```
 
-Revise o plano apresentado antes de confirmar o `apply`. A execução provisiona recursos reais na AWS.
+A senha do RabbitMQ não tem valor padrão e nunca vai para um `.tfvars`. Revise o plano apresentado antes de confirmar o `apply`. A execução provisiona recursos reais na AWS.
 
 ### 4. Verificar o cluster
 
@@ -128,11 +131,41 @@ terraform output
 
 As saídas incluem nome e região do cluster, VPC, sub-redes privadas, grupo de segurança, URLs dos repositórios ECR e comando de configuração do kubectl. Com o cluster e seus complementos prontos, siga o README do `bunzina-db`.
 
+## RabbitMQ
+
+O broker da saga ([ADR 0015](https://github.com/Bunzina/bunzina/blob/main/docs/arch/adrs/0015-rabbitmq-broker.md)) é um release Helm (`helm_release.rabbitmq`, em [`infra/rabbitmq.tf`](infra/rabbitmq.tf)) do chart local [`charts/rabbitmq`](charts/rabbitmq), com um único nó, imagem oficial `rabbitmq:3.13-management` (a mesma do `docker-compose` dos serviços) e volume persistente. Ele roda no namespace `rabbitmq`, separado do namespace do PostgreSQL, que pertence ao `bunzina-db`.
+
+A topologia é carregada como *definitions* no boot, a partir de `topology` em [`charts/rabbitmq/values.yaml`](charts/rabbitmq/values.yaml):
+
+| Fila | Bindings na exchange `bunzina.events` (topic, durável) |
+| --- | --- |
+| `bunzina-os.inbox` | `evt.workshop.*`, `evt.billing.*` |
+| `bunzina-billing.inbox` | `cmd.billing.*` |
+| `bunzina-workshop.inbox` | `cmd.workshop.*` |
+
+Cada fila tem a DLQ `<fila>.dlq`, ligada com `#` à exchange `bunzina.events.dlx`; a fila aponta para ela por `x-dead-letter-exchange`. Essas definições precisam permanecer idênticas ao `assertTopology` de cada serviço (`src/infrastructure/messaging/connection.ts`): um argumento a mais em qualquer fila faz o `assertQueue` do serviço falhar com `PRECONDITION_FAILED`.
+
+**Credenciais.** O usuário é `bunzina` e a senha vem de `TF_VAR_rabbitmq_password`; no GitHub Actions, do secret `RABBITMQ_PASSWORD` deste repositório. O RabbitMQ não cria o usuário padrão quando há definitions para carregar, então o usuário e a senha entram nas próprias definitions, guardadas em um Secret do Kubernetes.
+
+**Conexão dos serviços.** Dentro do cluster, o secret `RABBITMQ_URL` de `bunzina-os`, `bunzina-billing` e `bunzina-workshop` deve ser:
+
+```text
+amqp://bunzina:<senha>@bunzina-rabbitmq.rabbitmq.svc.cluster.local:5672
+```
+
+O endereço também sai em `terraform output rabbitmq_amqp_host`. A interface de gerenciamento e as métricas Prometheus (porta `15692`) ficam apenas no Service interno:
+
+```bash
+kubectl -n rabbitmq port-forward svc/bunzina-rabbitmq 15672:15672
+```
+
+**Local.** O broker local é o mesmo `rabbitmq:3.13-management` do `docker-compose.yml`, com usuário e senha `bunzina`. Os serviços declaram a mesma topologia ao conectar.
+
 ## Deploy pelo GitHub Actions
 
-O arquivo [terraform.yml](.github/workflows/terraform.yml) executa `fmt`, `init`, `validate` e `plan` em pull requests que alteram `infra/**` ou o próprio workflow, publicando o plano no PR.
+O arquivo [terraform.yml](.github/workflows/terraform.yml) executa `fmt`, `init`, `validate` e `plan` em pull requests que alteram `infra/**`, `charts/**` ou o próprio workflow, publicando o plano no PR.
 
-1. Configure os secrets `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_SESSION_TOKEN` e `AWS_ACCOUNT_ID` no GitHub. O ID deve corresponder à conta das credenciais.
+1. Configure os secrets `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_SESSION_TOKEN`, `AWS_ACCOUNT_ID` e `RABBITMQ_PASSWORD` no GitHub. O ID deve corresponder à conta das credenciais.
 2. Revise o plano do pull request.
 3. Em **Actions → Terraform → Run workflow**, selecione a referência desejada e inicie a execução manual.
 4. O job de aplicação utiliza o ambiente GitHub `production` e executa `terraform apply -auto-approve -input=false`.

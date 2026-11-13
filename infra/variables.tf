@@ -57,3 +57,38 @@ variable "metrics_server_chart_version" {
   type        = string
   default     = "3.14.0"
 }
+
+variable "rabbitmq_namespace" {
+  description = "Kubernetes namespace do RabbitMQ. Deve diferir do namespace criado pelo bunzina-db."
+  type        = string
+  default     = "rabbitmq"
+}
+
+variable "rabbitmq_username" {
+  description = "Usuário administrador do RabbitMQ usado pelos serviços."
+  type        = string
+  default     = "bunzina"
+}
+
+variable "rabbitmq_password" {
+  description = "Senha do usuário do RabbitMQ. Sem default: vem de TF_VAR_rabbitmq_password (secret RABBITMQ_PASSWORD no GitHub Actions). A mesma senha vai na URL do secret RABBITMQ_URL de cada serviço."
+  type        = string
+  sensitive   = true
+
+  validation {
+    condition     = length(var.rabbitmq_password) >= 8
+    error_message = "rabbitmq_password precisa ter ao menos 8 caracteres (defina TF_VAR_rabbitmq_password)."
+  }
+}
+
+variable "rabbitmq_storage_size" {
+  description = "Tamanho do volume do RabbitMQ."
+  type        = string
+  default     = "2Gi"
+}
+
+variable "rabbitmq_storage_class" {
+  description = "StorageClass do volume do RabbitMQ. Vazio usa a padrão do cluster (a gp3 é criada depois, pelo bunzina-db)."
+  type        = string
+  default     = ""
+}

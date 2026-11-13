@@ -1,0 +1,38 @@
+image:
+  repository: rabbitmq
+  tag: 3.13-management
+  pullPolicy: IfNotPresent
+
+auth:
+  username: bunzina
+  password: ""
+
+persistence:
+  enabled: true
+  size: 2Gi
+  storageClass: ""
+
+resources:
+  requests:
+    cpu: 250m
+    memory: 512Mi
+  limits:
+    memory: 1Gi
+
+service:
+  type: ClusterIP
+
+topology:
+  vhost: /
+  exchange: bunzina.events
+  queues:
+    - name: bunzina-os.inbox
+      bindings:
+        - evt.workshop.*
+        - evt.billing.*
+    - name: bunzina-billing.inbox
+      bindings:
+        - cmd.billing.*
+    - name: bunzina-workshop.inbox
+      bindings:
+        - cmd.workshop.*
