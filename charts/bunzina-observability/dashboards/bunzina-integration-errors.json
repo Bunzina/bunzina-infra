@@ -1,0 +1,78 @@
+{
+  "annotations": { "list": [] },
+  "editable": false,
+  "graphTooltip": 0,
+  "panels": [
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "reqps" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 0 },
+      "id": 1,
+      "title": "Notificações com falha, por canal",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "sum by (channel) (rate(bunzina_notifications_total{job=\"bunzina\",result=\"failure\"}[5m]))",
+          "legendFormat": "{{channel}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "reqps" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "id": 4,
+      "title": "Taxa de 4xx por rota",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "sum by (route) (rate(bunzina_http_requests_total{job=\"bunzina\",status_code=~\"4..\"}[5m]))",
+          "legendFormat": "{{route}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "reqps" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "id": 2,
+      "title": "Taxa de 5xx por rota",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "sum by (route) (rate(bunzina_http_requests_total{job=\"bunzina\",status_code=~\"5..\"}[5m]))",
+          "legendFormat": "{{route}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "loki", "uid": "loki" },
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 16 },
+      "id": 3,
+      "title": "Logs de erro (clique no requestId para abrir no Tempo)",
+      "type": "logs",
+      "options": {
+        "showTime": true,
+        "showLabels": false,
+        "wrapLogMessage": true,
+        "sortOrder": "Descending"
+      },
+      "targets": [
+        {
+          "expr": "{compose_service=\"app\"} | json | level=~\"ERROR|WARN\"",
+          "refId": "A"
+        }
+      ]
+    }
+  ],
+  "schemaVersion": 41,
+  "tags": ["bunzina", "business"],
+  "templating": { "list": [] },
+  "time": { "from": "now-6h", "to": "now" },
+  "title": "Bunzina - Erros e Falhas nas Integrações",
+  "uid": "bunzina-integration-errors",
+  "version": 1
+}

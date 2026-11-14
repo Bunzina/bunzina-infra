@@ -7,3 +7,7 @@ override.tf
 override.tf.json
 *.tfvars
 !terraform.tfvars.example
+
+# dependências baixadas por `helm dependency update`
+charts/**/charts/
+charts/**/Chart.lock

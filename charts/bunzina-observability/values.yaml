@@ -1,0 +1,500 @@
+# Stack de observabilidade demo-grade: kube-prometheus-stack (Prometheus + Grafana
+# + node-exporter + kube-state-metrics) + Loki + Tempo + Alloy (duas instâncias:
+# coleta de logs via API do Kubernetes, e gateway OTLP para traces).
+#
+# Tudo em modo single-binary/filesystem, sem S3, com retenção curta e recursos
+# enxutos — combina com um cluster pequeno da AWS Academy e com o ambiente sendo
+# destruído após a gravação do vídeo. Alertmanager fica desligado: o motor único
+# de alertas é o Grafana unified alerting (ver `alerting/` e `dashboards/`).
+
+kube-prometheus-stack:
+  alertmanager:
+    enabled: false
+
+  prometheus:
+    prometheusSpec:
+      retention: 7d
+      # Sem essa flag, Prometheus só vê ServiceMonitors com o label `release:
+      # <nome-da-release>` (o do kube-prometheus-stack). O ServiceMonitor do
+      # Bunzina não carrega esse label, então precisamos abrir o seletor.
+      serviceMonitorSelectorNilUsesHelmValues: false
+      podMonitorSelectorNilUsesHelmValues: false
+      resources:
+        requests:
+          cpu: 250m
+          memory: 512Mi
+        limits:
+          cpu: 500m
+          memory: 1Gi
+      storageSpec:
+        volumeClaimTemplate:
+          spec:
+            storageClassName: gp2
+            accessModes: ["ReadWriteOnce"]
+            resources:
+              requests:
+                storage: 10Gi
+
+  # kube-state-metrics + prometheus-node-exporter vêm habilitados por padrão no
+  # kube-prometheus-stack e respondem pelo "CPU/memória do Kubernetes" do
+  # task doc — não precisam de configuração adicional para este cluster.
+
+  grafana:
+    adminUser: admin
+    # Sobrescrito via --set no CI (secret do GitHub) ou values.secret.yaml local.
+    adminPassword: change-me
+    # Grafana 13 installs/updates bundled datasource plugins at startup.
+    # Keep the container root filesystem writable so Prometheus/Loki/Tempo
+    # plugins can register correctly.
+    containerSecurityContext:
+      readOnlyRootFilesystem: false
+    datasources:
+      datasources.yaml:
+        apiVersion: 1
+        deleteDatasources:
+          - name: Prometheus
+            orgId: 1
+          - name: Loki
+            orgId: 1
+          - name: Tempo
+            orgId: 1
+        datasources:
+          - name: Prometheus
+            uid: prometheus
+            type: prometheus
+            access: proxy
+            url: http://bunzina-observability-kube-prometheus.observability.svc.cluster.local:9090
+            isDefault: true
+            editable: false
+            jsonData:
+              httpMethod: POST
+          - name: Loki
+            uid: loki
+            type: loki
+            access: proxy
+            url: http://loki.observability.svc.cluster.local:3100
+            editable: false
+            jsonData:
+              derivedFields:
+                - datasourceUid: tempo
+                  matcherRegex: '"trace_id":"(\w+)"'
+                  name: TraceID
+                  url: "$${__value.raw}"
+          - name: Tempo
+            uid: tempo
+            type: tempo
+            access: proxy
+            url: http://tempo.observability.svc.cluster.local:3200
+            editable: false
+            jsonData:
+              tracesToLogsV2:
+                datasourceUid: loki
+                filterByTraceID: true
+              serviceMap:
+                datasourceUid: prometheus
+    ingress:
+      enabled: true
+      ingressClassName: alb
+      annotations:
+        alb.ingress.kubernetes.io/scheme: internet-facing
+        alb.ingress.kubernetes.io/target-type: ip
+        alb.ingress.kubernetes.io/listen-ports: '[{"HTTP": 80}]'
+      hosts: [] # sem domínio próprio: regra sem host, aceita qualquer hostname do ALB.
+    persistence:
+      enabled: false # demo-grade: dashboards/datasources vêm de ConfigMap (as-code), não da UI.
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+      limits:
+        cpu: 250m
+        memory: 512Mi
+    sidecar:
+      datasources:
+        enabled: false
+      dashboards:
+        enabled: true # já é o default do chart; explícito para documentar o mecanismo.
+        label: grafana_dashboard
+        labelValue: "1"
+    # SMTP do contact point de alerta (ver `alerting` abaixo). Aponta para o
+    # mailcatcher desta mesma release (templates/mailcatcher.yaml) — só para
+    # a demo conseguir mostrar o e-mail chegando; não é um servidor de e-mail
+    # de verdade.
+    grafana.ini:
+      smtp:
+        enabled: true
+        host: "mailcatcher.observability.svc.cluster.local:1025"
+        skip_verify: true
+        from_address: "alerts@bunzina.local"
+        from_name: "Bunzina Alerting"
+
+    # Alerting as code (file provisioning). Mesmo conteúdo de
+    # observability/grafana/provisioning/alerting/*.yaml, adaptado só no
+    # datasource de SMTP (aqui é o mailcatcher in-cluster). Ver
+    # https://docs.grafana.com/alerting/set-up/provision-alerting-resources/file-provisioning/
+    alerting:
+      contactpoints.yaml:
+        apiVersion: 1
+        contactPoints:
+          - orgId: 1
+            name: bunzina-email
+            receivers:
+              - uid: bunzina-email-1
+                type: email
+                settings:
+                  addresses: alerts@bunzina.local
+                  singleEmail: true
+      policies.yaml:
+        apiVersion: 1
+        policies:
+          - orgId: 1
+            receiver: bunzina-email
+            group_by: ['alertname']
+            group_wait: 30s
+            group_interval: 5m
+            repeat_interval: 4h
+      rules.yaml:
+        apiVersion: 1
+        groups:
+          - orgId: 1
+            name: bunzina-api
+            folder: Bunzina
+            interval: 1m
+            rules:
+              - uid: bunzina-target-down
+                title: Bunzina target down
+                condition: B
+                data:
+                  - refId: A
+                    datasourceUid: prometheus
+                    relativeTimeRange:
+                      from: 600
+                      to: 0
+                    model:
+                      refId: A
+                      instant: true
+                      expr: up{job="bunzina"}
+                  - refId: B
+                    datasourceUid: __expr__
+                    model:
+                      refId: B
+                      type: threshold
+                      expression: A
+                      conditions:
+                        - evaluator:
+                            type: lt
+                            params: [1]
+                for: 5m
+                noDataState: Alerting
+                execErrState: Alerting
+                labels:
+                  severity: critical
+                annotations:
+                  summary: Bunzina API is not being scraped
+                  description: Prometheus cannot scrape the Bunzina metrics endpoint for 5 minutes.
+
+              - uid: bunzina-high-5xx-rate
+                title: Bunzina high 5xx rate
+                condition: B
+                data:
+                  - refId: A
+                    datasourceUid: prometheus
+                    relativeTimeRange:
+                      from: 600
+                      to: 0
+                    model:
+                      refId: A
+                      instant: true
+                      expr: >-
+                        sum(rate(bunzina_http_requests_total{job="bunzina",status_code=~"5.."}[5m]))
+                        /
+                        clamp_min(sum(rate(bunzina_http_requests_total{job="bunzina"}[5m])), 0.1)
+                  - refId: B
+                    datasourceUid: __expr__
+                    model:
+                      refId: B
+                      type: threshold
+                      expression: A
+                      conditions:
+                        - evaluator:
+                            type: gt
+                            params: [0.05]
+                for: 10m
+                noDataState: OK
+                execErrState: Alerting
+                labels:
+                  severity: warning
+                annotations:
+                  summary: Bunzina has a high 5xx rate
+                  description: More than 5% of requests returned 5xx responses for 10 minutes.
+
+              - uid: bunzina-high-latency
+                title: Bunzina high request latency
+                condition: B
+                data:
+                  - refId: A
+                    datasourceUid: prometheus
+                    relativeTimeRange:
+                      from: 600
+                      to: 0
+                    model:
+                      refId: A
+                      instant: true
+                      expr: >-
+                        histogram_quantile(0.95,
+                        sum by (le) (rate(bunzina_http_request_duration_seconds_bucket{job="bunzina"}[5m])))
+                  - refId: B
+                    datasourceUid: __expr__
+                    model:
+                      refId: B
+                      type: threshold
+                      expression: A
+                      conditions:
+                        - evaluator:
+                            type: gt
+                            params: [1]
+                for: 10m
+                noDataState: OK
+                execErrState: Alerting
+                labels:
+                  severity: warning
+                annotations:
+                  summary: Bunzina request latency is high
+                  description: The 95th percentile request latency is above one second for 10 minutes.
+
+              # Falhas no processamento de ordens de serviço (tasks-phase-3.md).
+              # Deriva de 5xx em /service-orders* em vez de um contador
+              # dedicado — ver docs/observability.md para o porquê.
+              - uid: bunzina-service-order-failures
+                title: Bunzina service order failures
+                condition: B
+                data:
+                  - refId: A
+                    datasourceUid: prometheus
+                    relativeTimeRange:
+                      from: 300
+                      to: 0
+                    model:
+                      refId: A
+                      instant: true
+                      expr: >-
+                        sum(rate(bunzina_http_requests_total{job="bunzina",route=~"/service-orders.*",status_code=~"5.."}[5m]))
+                  - refId: B
+                    datasourceUid: __expr__
+                    model:
+                      refId: B
+                      type: threshold
+                      expression: A
+                      conditions:
+                        - evaluator:
+                            type: gt
+                            params: [0]
+                for: 5m
+                noDataState: OK
+                execErrState: Alerting
+                labels:
+                  severity: warning
+                annotations:
+                  summary: Bunzina service order APIs are failing
+                  description: At least one /service-orders* route has returned 5xx responses for 5 minutes.
+
+loki:
+  fullnameOverride: loki
+  deploymentMode: SingleBinary
+
+  loki:
+    auth_enabled: false
+    commonConfig:
+      replication_factor: 1
+    storage:
+      type: filesystem
+    schemaConfig:
+      configs:
+        - from: "2024-04-01"
+          store: tsdb
+          object_store: filesystem
+          schema: v13
+          index:
+            prefix: index_
+            period: 24h
+    limits_config:
+      allow_structured_metadata: true
+      volume_enabled: true
+      retention_period: 72h
+    compactor:
+      retention_enabled: true
+      delete_request_store: filesystem
+
+  # SingleBinary concentra tudo; os componentes de modo "simple scalable" (SSD)
+  # e o compactor standalone precisam ficar em zero, senão o chart falha a
+  # validação (não dá para ter os dois modos com réplicas > 0 ao mesmo tempo).
+  write:
+    replicas: 0
+  read:
+    replicas: 0
+  backend:
+    replicas: 0
+  compactor:
+    replicas: 0
+
+  singleBinary:
+    replicas: 1
+    persistence:
+      enabled: true
+      size: 10Gi
+      storageClass: gp2
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+      limits:
+        cpu: 500m
+        memory: 512Mi
+
+  # Sem cache memcached, gateway, canary e teste de Helm — footprint mínimo.
+  gateway:
+    enabled: false
+  lokiCanary:
+    enabled: false
+  test:
+    enabled: false
+  chunksCache:
+    enabled: false
+  resultsCache:
+    enabled: false
+  minio:
+    enabled: false
+
+tempo:
+  fullnameOverride: tempo
+  # OTLP gRPC (4317) e HTTP (4318) já vêm habilitados por padrão no chart.
+  # Storage local (filesystem) também já é o default — nada a mudar ali.
+  tempo:
+    retention: 48h
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+      limits:
+        cpu: 500m
+        memory: 512Mi
+  persistence:
+    enabled: true
+    size: 5Gi
+    storageClassName: gp2
+
+# Alloy roda duas vezes nesta mesma release (ver aliases em Chart.yaml):
+# - alloy-logs: Deployment único que descobre pods via API do Kubernetes e
+#   envia os logs para o Loki. Não usa hostPath nem Docker socket — só as
+#   permissões de leitura de pods/namespaces/pods-log que o chart já inclui
+#   por padrão em `rbac.rules`.
+# - alloy-gateway: Deployment que recebe OTLP (gRPC/HTTP) da aplicação e
+#   encaminha para o Tempo.
+alloy-logs:
+  fullnameOverride: alloy-logs
+  controller:
+    type: deployment
+    replicas: 1
+  alloy:
+    resources:
+      requests:
+        cpu: 50m
+        memory: 128Mi
+      limits:
+        cpu: 200m
+        memory: 256Mi
+    configMap:
+      content: |
+        discovery.kubernetes "pods" {
+          role = "pod"
+        }
+
+        // `compose_service=app` reaproveita o mesmo nome de label usado no
+        // compose local, para os dashboards (observability/grafana/dashboards/)
+        // funcionarem sem mudança em ambos os ambientes — ver docs/observability.md.
+        discovery.relabel "pods" {
+          targets = discovery.kubernetes.pods.targets
+
+          rule {
+            source_labels = ["__meta_kubernetes_pod_label_app_kubernetes_io_name"]
+            regex         = "bunzina"
+            target_label  = "compose_service"
+            replacement   = "app"
+          }
+
+          rule {
+            source_labels = ["__meta_kubernetes_pod_container_name"]
+            target_label  = "container"
+          }
+        }
+
+        loki.source.kubernetes "pods" {
+          targets    = discovery.relabel.pods.output
+          forward_to = [loki.process.pods.receiver]
+        }
+
+        loki.process "pods" {
+          stage.json {
+            expressions = {
+              level     = "level",
+              message   = "message",
+              requestId = "requestId",
+            }
+          }
+
+          forward_to = [loki.write.default.receiver]
+        }
+
+        loki.write "default" {
+          endpoint {
+            url = "http://loki.observability.svc.cluster.local:3100/loki/api/v1/push"
+          }
+        }
+
+alloy-gateway:
+  fullnameOverride: alloy-gateway
+  controller:
+    type: deployment
+    replicas: 1
+  alloy:
+    resources:
+      requests:
+        cpu: 50m
+        memory: 128Mi
+      limits:
+        cpu: 200m
+        memory: 256Mi
+    extraPorts:
+      - name: otlp-grpc
+        port: 4317
+        targetPort: 4317
+        protocol: TCP
+      - name: otlp-http
+        port: 4318
+        targetPort: 4318
+        protocol: TCP
+    configMap:
+      content: |
+        otelcol.receiver.otlp "default" {
+          grpc {
+            endpoint = "0.0.0.0:4317"
+          }
+
+          http {
+            endpoint = "0.0.0.0:4318"
+          }
+
+          output {
+            traces = [otelcol.exporter.otlphttp.tempo.input]
+          }
+        }
+
+        otelcol.exporter.otlphttp "tempo" {
+          client {
+            endpoint = "http://tempo.observability.svc.cluster.local:4318"
+
+            tls {
+              insecure = true
+            }
+          }
+        }
