@@ -1,0 +1,59 @@
+{
+  "annotations": { "list": [] },
+  "editable": false,
+  "graphTooltip": 0,
+  "panels": [
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "gridPos": { "h": 6, "w": 6, "x": 0, "y": 0 },
+      "id": 1,
+      "title": "Ordens criadas (24h)",
+      "type": "stat",
+      "targets": [
+        {
+          "expr": "round(sum(increase(bunzina_service_orders_total{job=\"bunzina\",event=\"created\"}[24h])))",
+          "legendFormat": "criadas",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "gridPos": { "h": 6, "w": 18, "x": 6, "y": 0 },
+      "id": 2,
+      "title": "Ordens criadas por dia, por status inicial",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "round(sum by (status) (increase(bunzina_service_orders_total{job=\"bunzina\",event=\"created\"}[24h])))",
+          "legendFormat": "{{status}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "reqps" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 6 },
+      "id": 3,
+      "title": "Eventos de ordem de serviço (criação x mudança de status)",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "sum by (event) (rate(bunzina_service_orders_total{job=\"bunzina\"}[1h]))",
+          "legendFormat": "{{event}}",
+          "refId": "A"
+        }
+      ]
+    }
+  ],
+  "schemaVersion": 41,
+  "tags": ["bunzina", "business"],
+  "templating": { "list": [] },
+  "time": { "from": "now-7d", "to": "now" },
+  "title": "Bunzina - Volume de Ordens de Serviço",
+  "uid": "bunzina-so-volume",
+  "version": 1
+}

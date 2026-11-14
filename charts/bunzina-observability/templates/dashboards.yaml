@@ -1,0 +1,20 @@
+# Um ConfigMap por dashboard, lido de dashboards/*.json, versionado neste chart.
+#
+# O sidecar do Grafana (kube-prometheus-stack.grafana.sidecar.dashboards,
+# label `grafana_dashboard: "1"`) importa qualquer ConfigMap com esse label,
+# em qualquer namespace.
+{{- range $path, $bytes := .Files.Glob "dashboards/*.json" }}
+{{- $name := base $path | trimSuffix ".json" }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ $name }}
+  namespace: {{ $.Release.Namespace }}
+  labels:
+    grafana_dashboard: "1"
+    app.kubernetes.io/part-of: bunzina-observability
+data:
+  {{ base $path }}: |
+{{ $.Files.Get $path | indent 4 }}
+{{- end }}

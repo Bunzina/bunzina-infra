@@ -35,3 +35,9 @@ output "configure_kubectl" {
   description = "Command to configure kubectl with the EKS cluster context"
   value       = "aws eks update-kubeconfig --name ${aws_eks_cluster.this.name} --region ${var.aws_region}"
 }
+
+output "grafana_admin_password" {
+  description = "Senha do usuário admin do Grafana. Leia com: terraform output -raw grafana_admin_password"
+  value       = random_password.grafana_admin.result
+  sensitive   = true
+}

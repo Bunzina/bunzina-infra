@@ -1,0 +1,66 @@
+{
+  "annotations": { "list": [] },
+  "editable": false,
+  "graphTooltip": 0,
+  "panels": [
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": { "unit": "suffix: s", "decimals": 2 },
+        "overrides": []
+      },
+      "gridPos": { "h": 6, "w": 8, "x": 0, "y": 0 },
+      "id": 1,
+      "title": "Tempo medio: Em execucao -> Concluido",
+      "type": "stat",
+      "targets": [
+        {
+          "expr": "sum(bunzina_service_order_status_duration_seconds_sum{job=\"bunzina\",from_status=\"IN_EXECUTION\",to_status=\"COMPLETED\"}) / sum(bunzina_service_order_status_duration_seconds_count{job=\"bunzina\",from_status=\"IN_EXECUTION\",to_status=\"COMPLETED\"})",
+          "instant": true,
+          "legendFormat": "IN_EXECUTION -> COMPLETED",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": { "unit": "suffix: s", "decimals": 2 },
+        "overrides": []
+      },
+      "gridPos": { "h": 6, "w": 16, "x": 8, "y": 0 },
+      "id": 2,
+      "title": "Tempo medio por transicao",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "sum by (from_status, to_status) (bunzina_service_order_status_duration_seconds_sum{job=\"bunzina\"}) / sum by (from_status, to_status) (bunzina_service_order_status_duration_seconds_count{job=\"bunzina\"})",
+          "legendFormat": "{{from_status}} -> {{to_status}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 6 },
+      "id": 3,
+      "title": "Transicoes de status",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "sum by (from_status, to_status) (bunzina_service_order_status_duration_seconds_count{job=\"bunzina\"})",
+          "legendFormat": "{{from_status}} -> {{to_status}}",
+          "refId": "A"
+        }
+      ]
+    }
+  ],
+  "schemaVersion": 41,
+  "tags": ["bunzina", "business"],
+  "templating": { "list": [] },
+  "time": { "from": "now-7d", "to": "now" },
+  "title": "Bunzina - Tempo de Execucao por Status",
+  "uid": "bunzina-so-duration",
+  "version": 1
+}
