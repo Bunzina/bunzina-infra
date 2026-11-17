@@ -45,7 +45,7 @@ flowchart TD
     DB[bunzina-db] -. lê cluster_name .-> S3
 ```
 
-A VPC utiliza `10.0.0.0/16` por padrão, com uma sub-rede pública e uma privada em cada zona. O grupo de nós usa `t3.medium`, com dois nós desejados, mínimo de um e máximo de quatro. O ECR da aplicação verifica imagens no envio e mantém as dez mais recentes.
+A VPC utiliza `10.0.0.0/16` por padrão, com uma sub-rede pública e uma privada em cada zona. O grupo de nós usa `t3.medium`, com três nós desejados, mínimo de um e máximo de quatro. O ECR da aplicação verifica imagens no envio e mantém as dez mais recentes.
 
 O PostgreSQL, sua StorageClass e seu volume são gerenciados pelo `bunzina-db`. A publicação das imagens e a implantação da aplicação ficam no repositório da aplicação.
 
